@@ -1,0 +1,103 @@
+<?php
+/**
+ * Created by PhpStorm.
+ * User: yf
+ * Date: 2018/5/28
+ * Time: 下午6:33
+ */
+
+namespace EasySwoole\EasySwoole;
+
+
+use EasySwoole\EasySwoole\Swoole\EventRegister;
+use EasySwoole\EasySwoole\AbstractInterface\Event;
+use EasySwoole\Http\Request;
+use EasySwoole\Http\Response;
+
+// @1
+use EasySwoole\Component\Di;
+use App\Lib\Redis\Redis;
+use App\Lib\Process\Consumer;
+use EasySwoole\Swoole\Process\ProcessManager;
+use App\Lib\Cache\Video as CacheVideo;
+//use EasySwoole\Swoole\Time\Timer;
+use EasySwoole\Component\Timer;
+
+class EasySwooleEvent implements Event
+{
+
+    public static function initialize()
+    {
+        // TODO: Implement initialize() method.
+        date_default_timezone_set('Asia/Shanghai');
+    }
+
+    public static function mainServerCreate(EventRegister $register)
+    {
+        // 原始的mysql 相关
+        Di::getInstance()->set(
+            'MYSQL',
+            \MysqliDb::class,
+            array(
+            'host' => '127.0.0.1',
+            'username' => 'root',
+            'password' => '123456',
+            'db'=> 'imooc_video',
+            'port' => 3306,
+            'charset' => 'utf8')
+        );
+
+        // 说明下 这个地方 也是有优化的空间的。配置的内容 应该从 传递过来 这样可控性质强
+        Di::getInstance()->set('REDIS', Redis::getInstance());
+        Di::getInstance()->set('ES', \App\Model\Es\EsClient::getInstance());
+
+        $allNum = 3;
+        for ($i = 0 ;$i < $allNum; $i++) {
+            //ProcessManager::getInstance()->addProcess("consumer_test_{$i}", Consumer::class);
+        }
+
+        $cacheVideoObj = new CacheVideo();
+        //CronTab::getInstance()
+        //    ->addRule('test2', '*/1 * * * *', function() use($cacheVideoObj){
+        //        $cacheVideoObj->setIndexVideo();
+        //    }
+        //);
+
+        /*Timer::loop(1000 * 60, function() use($cacheVideoObj) {
+            var_dump(1);
+        });*/
+
+        
+        // 例如为主服务注册onWorkerStart事件
+        //定时器不能在服务启动之前使用。在服务启动以后，添加的定时器仅仅在当前进程中有效。
+        //在workerStart事件中添加定时器时，请注意判断需要添加定时器的workerId,否在该定时器在每个进程中均会被执行
+        $register->add(EventRegister::onWorkerStart, function (\swoole_server $server, $workerId) use($cacheVideoObj) {
+            //例如在第一个进程 添加一个10秒的定时器
+            if ($workerId == 0) {
+                //Timer::loop(1000 * 200000, function() use($cacheVideoObj) {
+                Timer::getInstance()->loop(1000 * 2, function() use($cacheVideoObj) {
+                    $cacheVideoObj->setIndexVideo("file");
+                });
+            }
+
+            // 优化的方案 新增到 类库中
+        });
+    }
+
+    public static function onRequest(Request $request, Response $response): bool
+    {
+        // TODO: Implement onRequest() method.
+        return true;
+    }
+
+    public static function afterRequest(Request $request, Response $response): void
+    {
+        // TODO: Implement afterAction() method.
+    }
+
+    public static function onReceive(\swoole_server $server, int $fd, int $reactor_id, string $data):void
+    {
+
+    }
+
+}
